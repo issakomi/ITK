@@ -58,7 +58,8 @@ public:
     JPEG = 0,
     JPEG2000,
     JPEGLS,
-    RLE
+    RLE,
+    LOSSYJPEG
   };
 };
 
@@ -345,6 +346,7 @@ public:
   static constexpr CompressionEnum JPEG2000 = CompressionEnum::JPEG2000;
   static constexpr CompressionEnum JPEGLS = CompressionEnum::JPEGLS;
   static constexpr CompressionEnum RLE = CompressionEnum::RLE;
+  static constexpr CompressionEnum LOSSYJPEG = CompressionEnum::LOSSYJPEG;
 #endif
 
   itkSetEnumMacro(CompressionType, CompressionEnum);

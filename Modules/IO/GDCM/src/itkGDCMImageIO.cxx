@@ -41,6 +41,7 @@
 #include "gdcmImageHelper.h"
 #include "gdcmFileExplicitFilter.h"
 #include "gdcmImageChangeTransferSyntax.h"
+#include "gdcmJPEGCodec.h"
 #include "gdcmImageChangePhotometricInterpretation.h"
 #include "gdcmDataSetHelper.h"
 #include "gdcmStringFilter.h"
@@ -1306,6 +1307,7 @@ GDCMImageIO::Write(const void * buffer)
   // If user ask to use compression:
   if (m_UseCompression)
   {
+    gdcm::JPEGCodec                 codec;
     gdcm::ImageChangeTransferSyntax change;
     if (m_CompressionType == CompressionEnum::JPEG)
     {
@@ -1315,17 +1317,54 @@ GDCMImageIO::Write(const void * buffer)
     {
       change.SetTransferSyntax(gdcm::TransferSyntax::JPEG2000Lossless);
     }
+    else if (m_CompressionType == CompressionEnum::LOSSYJPEG)
+    {
+      if ((this->GetNumberOfComponents() == 1 || this->GetNumberOfComponents() == 3) &&
+          outpixeltype == gdcm::PixelFormat::UINT8)
+      {
+        change.SetTransferSyntax(gdcm::TransferSyntax::JPEGBaselineProcess1);
+      }
+#if 0
+      else if (this->GetNumberOfComponents() == 1 && outpixeltype == gdcm::PixelFormat::UINT16)
+      {
+        // FIXME according to standard bits allocated have to be 16, but bits stored 12
+        // http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_8.2.html#table_8.2.1-1
+        change.SetTransferSyntax(gdcm::TransferSyntax::JPEGExtendedProcess2_4);
+      }
+#endif
+      else
+      {
+        itkExceptionMacro(<< "Could not set lossy JPEG Transfer Syntax for particular image");
+      }
+      codec.SetLossless(false);
+      codec.SetQuality(100);
+      change.SetUserCodec(&codec);
+    }
     else
     {
       itkExceptionMacro(<< "Unknown compression type");
     }
     change.SetInput(image);
-    bool b = change.Change();
+    const bool b = change.Change();
     if (!b)
     {
       itkExceptionMacro(<< "Could not change the Transfer Syntax for Compression");
     }
-    writer.SetImage(change.GetOutput());
+    if (this->GetNumberOfComponents() == 3 && m_CompressionType == CompressionEnum::LOSSYJPEG)
+    {
+      /*
+      Force output photo-metric to YBR_FULL_422.
+      Codec will generate YCbCr output: cinfo.jpeg_color_space == JCS_YCbCr.
+      But GDCM, AFAIK, doesn't update file's photo-metric interpretation to YBR_FULL_422.
+      */
+      gdcm::Image & copy = const_cast<gdcm::Image &>(change.GetOutput());
+      copy.SetPhotometricInterpretation(gdcm::PhotometricInterpretation::YBR_FULL_422);
+      writer.SetImage(copy);
+    }
+    else
+    {
+      writer.SetImage(change.GetOutput());
+    }
   }
   else
   {
@@ -1589,6 +1628,10 @@ GDCMImageIO::InternalSetCompressor(const std::string & _compressor)
   {
     m_CompressionType = CompressionEnum::JPEG;
   }
+  else if (_compressor == "LOSSYJPEG")
+  {
+    m_CompressionType = CompressionEnum::LOSSYJPEG;
+  }
   else
   {
     this->Superclass::InternalSetCompressor(_compressor);
@@ -1645,6 +1688,8 @@ operator<<(std::ostream & out, const GDCMImageIOEnums::Compression value)
         return "itk::GDCMImageIOEnums::Compression::JPEGLS";
       case GDCMImageIOEnums::Compression::RLE:
         return "itk::GDCMImageIOEnums::Compression::RLE";
+      case GDCMImageIOEnums::Compression::LOSSYJPEG:
+        return "itk::GDCMImageIOEnums::Compression::LOSSYJPEG";
       default:
         return "INVALID VALUE FOR itk::GDCMImageIOEnums::Compression";
     }
