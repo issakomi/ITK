@@ -22,6 +22,7 @@
 #include "itkNumericTraits.h"
 #include "itkArray.h"
 #include "itkCompensatedSummation.h"
+#include <mutex>
 
 namespace itk
 {
@@ -161,13 +162,8 @@ protected:
 
   /** Multi-thread version GenerateData. */
   void
-  ThreadedGenerateData(const RegionType & regionForThread, ThreadIdType threadId) override;
+  DynamicThreadedGenerateData(const RegionType & outputRegionForThread) override;
 
-  void
-  DynamicThreadedGenerateData(const RegionType &) override
-  {
-    itkExceptionMacro("This class requires threadId so it must use classic multi-threading model");
-  }
 
   // Override since the filter needs all the data for the algorithm
   void
@@ -182,17 +178,19 @@ private:
   using DistanceMapPointer = typename DistanceMapType::Pointer;
 
 
-  DistanceMapPointer m_DistanceMap;
+  DistanceMapPointer m_DistanceMap{ nullptr };
 
-  Array<RealType>       m_MaxDistance;
-  Array<IdentifierType> m_PixelCount;
+  RealType       m_MaxDistance{ NumericTraits<RealType>::ZeroValue() };
+  IdentifierType m_PixelCount{};
 
   using CompensatedSummationType = itk::CompensatedSummation<RealType>;
-  std::vector<CompensatedSummationType> m_Sum;
+  CompensatedSummationType m_Sum;
 
-  RealType m_DirectedHausdorffDistance;
-  RealType m_AverageHausdorffDistance;
-  bool     m_UseImageSpacing;
+  RealType m_DirectedHausdorffDistance{ NumericTraits<RealType>::ZeroValue() };
+  RealType m_AverageHausdorffDistance{ NumericTraits<RealType>::ZeroValue() };
+  bool     m_UseImageSpacing{ true };
+
+  std::mutex m_Mutex;
 }; // end of class
 } // end namespace itk
 

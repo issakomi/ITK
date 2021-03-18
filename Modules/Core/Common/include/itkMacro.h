@@ -490,18 +490,8 @@ OutputWindowDisplayDebugText(const char *);
   public:                                                                                                              \
     /* default message provides backward compatibility for a given exception type */                                   \
     static constexpr const char * const default_exception_message = whatmessage;                                       \
-    explicit newexcp(const char * file,                                                                                \
-                     unsigned int lineNumber = 0,                                                                      \
-                     const char * desc = "None",                                                                       \
-                     const char * loc = "Unknown")                                                                     \
-      : parentexcp(std::string{ file }, lineNumber, std::string{ desc }, std::string{ loc })                           \
-    {}                                                                                                                 \
-    explicit newexcp(std::string  file,                                                                                \
-                     unsigned int lineNumber = 0,                                                                      \
-                     std::string  desc = std::string{ "None" },                                                        \
-                     std::string  loc = std::string{ "Unknown" })                                                      \
-      : parentexcp(std::move(file), lineNumber, std::move(desc), std::move(loc))                                       \
-    {}                                                                                                                 \
+    /* Inherit the constructors from its base class. */                                                                \
+    using parentexcp::parentexcp;                                                                                      \
     itkTypeMacro(newexcp, parentexcp);                                                                                 \
   };                                                                                                                   \
   }                                                                                                                    \
@@ -510,35 +500,23 @@ OutputWindowDisplayDebugText(const char *);
 
 #define itkSpecializedMessageExceptionMacro(ExceptionType, x)                                                          \
   {                                                                                                                    \
-    std::ostringstream message;                                                                                        \
-    message << "itk::ERROR: " x;                                                                                       \
+    std::ostringstream exceptionDescriptionOutputStringStream;                                                         \
+    exceptionDescriptionOutputStringStream << "ITK ERROR: " x;                                                         \
     throw ::itk::ExceptionType(                                                                                        \
-      std::string{ __FILE__ }, __LINE__, std::string{ message.str() }, std::string{ ITK_LOCATION });                   \
+      std::string{ __FILE__ }, __LINE__, exceptionDescriptionOutputStringStream.str(), std::string{ ITK_LOCATION });   \
   }                                                                                                                    \
   ITK_MACROEND_NOOP_STATEMENT
 
 #define itkSpecializedExceptionMacro(ExceptionType)                                                                    \
-  {                                                                                                                    \
-    itkSpecializedMessageExceptionMacro(ExceptionType,                                                                 \
-                                        "itk::ERROR: " << ::itk::ExceptionType::default_exception_message);            \
-  }                                                                                                                    \
-  ITK_MACROEND_NOOP_STATEMENT
+  itkSpecializedMessageExceptionMacro(ExceptionType, << ::itk::ExceptionType::default_exception_message)
 
 /** The itkExceptionMacro macro is used to print error information (i.e., usually
  * a condition that results in program failure). Example usage looks like:
  * itkExceptionMacro(<< "this is error info" << this->SomeVariable); */
 #define itkExceptionMacro(x)                                                                                           \
-  {                                                                                                                    \
-    itkSpecializedMessageExceptionMacro(ExceptionObject,                                                               \
-                                        "itk::ERROR: " << this->GetNameOfClass() << "(" << this << "): " x);           \
-  }                                                                                                                    \
-  ITK_MACROEND_NOOP_STATEMENT
+  itkSpecializedMessageExceptionMacro(ExceptionObject, << this->GetNameOfClass() << "(" << this << "): " x)
 
-#define itkGenericExceptionMacro(x)                                                                                    \
-  {                                                                                                                    \
-    itkSpecializedMessageExceptionMacro(ExceptionObject, x);                                                           \
-  }                                                                                                                    \
-  ITK_MACROEND_NOOP_STATEMENT
+#define itkGenericExceptionMacro(x) itkSpecializedMessageExceptionMacro(ExceptionObject, x)
 
 #define itkGenericOutputMacro(x)                                                                                       \
   {                                                                                                                    \

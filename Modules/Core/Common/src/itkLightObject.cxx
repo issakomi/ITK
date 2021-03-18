@@ -16,7 +16,7 @@
  *
  *=========================================================================*/
 #include "itkLightObject.h"
-#include "itkObjectFactory.h"
+#include "itkObjectFactoryBase.h"
 #include <mutex>
 
 // Better name demanging for gcc
@@ -47,7 +47,7 @@ LightObject::Pointer
 LightObject::New()
 {
   Pointer       smartPtr;
-  LightObject * rawPtr = ::itk::ObjectFactory<LightObject>::Create();
+  LightObject * rawPtr = ObjectFactoryBase::CreateInstance(typeid(LightObject).name());
 
   if (rawPtr == nullptr)
   {
@@ -88,25 +88,25 @@ LightObject::Delete()
  */
 #ifdef _WIN32
 void *
-LightObject ::operator new(size_t n)
+LightObject::operator new(size_t n)
 {
   return new char[n];
 }
 
 void *
-LightObject ::operator new[](size_t n)
+LightObject::operator new[](size_t n)
 {
   return new char[n];
 }
 
 void
-LightObject ::operator delete(void * m)
+LightObject::operator delete(void * m)
 {
   delete[](char *) m;
 }
 
 void
-LightObject ::operator delete[](void * m, size_t)
+LightObject::operator delete[](void * m, size_t)
 {
   delete[](char *) m;
 }
@@ -172,7 +172,7 @@ LightObject::SetReferenceCount(int ref)
   }
 }
 
-LightObject ::~LightObject()
+LightObject::~LightObject()
 {
   /**
    * warn user if reference counting is on and the object is being referenced
