@@ -53,20 +53,6 @@ extern "C"
 namespace itk
 {
 
-namespace
-{
-// Wrap setjmp call to avoid warnings about variable clobbering.
-bool
-wrapSetjmp(itk_jpeg_error_mgr & jerr)
-{
-  if (setjmp(jerr.setjmp_buffer))
-  {
-    return true;
-  }
-  return false;
-}
-} // namespace
-
 // simple class to call fopen on construct and
 // fclose on destruct
 class JPEGFileWrapper
@@ -142,7 +128,7 @@ JPEGImageIO::CanReadFile(const char * file)
   jerr.pub.output_message = itk_jpeg_output_message;
   // set the jump point, if there is a jpeg error or warning
   // this will evaluate to true
-  if (wrapSetjmp(jerr))
+  if (setjmp(jerr.setjmp_buffer))
   {
     // clean up
     jpeg_destroy_decompress(&cinfo);
@@ -171,8 +157,6 @@ JPEGImageIO::ReadVolume(void *)
 void
 JPEGImageIO::Read(void * buffer)
 {
-  unsigned int ui;
-
   // use this class so return will call close
   JPEGFileWrapper JPEGfp(this->GetFileName(), "rb");
   FILE *          fp = JPEGfp.m_FilePointer;
@@ -188,12 +172,15 @@ JPEGImageIO::Read(void * buffer)
   struct jpeg_decompress_struct cinfo;
   struct itk_jpeg_error_mgr     jerr;
 
+  JSAMPROW * row_pointers = nullptr;
+  JSAMPLE *  tempImage = nullptr;
+
   cinfo.err = jpeg_std_error(&jerr.pub);
   // for any jpeg error call itk_jpeg_error_exit
   jerr.pub.error_exit = itk_jpeg_error_exit;
   // for any output message call itk_jpeg_output_message
   jerr.pub.output_message = itk_jpeg_output_message;
-  if (wrapSetjmp(jerr))
+  if (setjmp(jerr.setjmp_buffer))
   {
     // clean up
     jpeg_destroy_decompress(&cinfo);
@@ -212,21 +199,25 @@ JPEGImageIO::Read(void * buffer)
   // prepare to read the bulk data
   jpeg_start_decompress(&cinfo);
 
-  SizeValueType rowbytes = cinfo.output_components * cinfo.output_width;
-  auto *        tempImage = static_cast<JSAMPLE *>(buffer);
+  tempImage = static_cast<JSAMPLE *>(buffer);
 
-  auto * row_pointers = new JSAMPROW[cinfo.output_height];
-  for (ui = 0; ui < cinfo.output_height; ++ui)
+  row_pointers = new JSAMPROW[cinfo.output_height];
+  for (size_t ui = 0; ui < cinfo.output_height; ++ui)
   {
-    row_pointers[ui] = tempImage + rowbytes * ui;
+    row_pointers[ui] = tempImage + cinfo.output_components * cinfo.output_width * ui;
   }
 
   // read the bulk data
-  unsigned int remainingRows;
   while (cinfo.output_scanline < cinfo.output_height)
   {
-    remainingRows = cinfo.output_height - cinfo.output_scanline;
-    jpeg_read_scanlines(&cinfo, &row_pointers[cinfo.output_scanline], remainingRows);
+    if (setjmp(jerr.setjmp_buffer))
+    {
+      itkWarningMacro("JPEG file truncated: " << this->GetFileName());
+      jpeg_destroy_decompress(&cinfo);
+      delete[] row_pointers;
+      return;
+    }
+    jpeg_read_scanlines(&cinfo, &row_pointers[cinfo.output_scanline], cinfo.output_height - cinfo.output_scanline);
   }
 
   // finish the decompression step
@@ -235,7 +226,10 @@ JPEGImageIO::Read(void * buffer)
   // destroy the decompression object
   jpeg_destroy_decompress(&cinfo);
 
-  delete[] row_pointers;
+  if (row_pointers)
+  {
+    delete[] row_pointers;
+  }
 }
 
 JPEGImageIO::JPEGImageIO()
@@ -295,6 +289,8 @@ JPEGImageIO::ReadImageInformation()
                                                                 << itksys::SystemTools::GetLastSystemError());
   }
 
+  unsigned long long total_size = 0;
+
   // create jpeg decompression object and error handler
   struct jpeg_decompress_struct cinfo;
   struct itk_jpeg_error_mgr     jerr;
@@ -320,6 +316,13 @@ JPEGImageIO::ReadImageInformation()
   // cinfo.image_height etc. but that would preclude using libjpeg's
   // ability to scale an image on input).
   jpeg_calc_output_dimensions(&cinfo);
+
+  total_size = static_cast<unsigned long long>(cinfo.output_width) * cinfo.output_height * cinfo.output_components;
+  if (total_size > 0xffffffff && sizeof(size_t) < 8)
+  {
+    jpeg_destroy_decompress(&cinfo);
+    itkExceptionMacro("JPEG image is too big " << this->GetFileName());
+  }
 
   // pull out the width/height
   this->SetNumberOfDimensions(2);
@@ -422,7 +425,7 @@ JPEGImageIO::WriteSlice(std::string & fileName, const void * buffer)
   cinfo.err = jpeg_std_error(&jerr.pub);
   // set the jump point, if there is a jpeg error or warning
   // this will evaluate to true
-  if (wrapSetjmp(jerr))
+  if (setjmp(jerr.setjmp_buffer))
   {
     jpeg_destroy_compress(&cinfo);
     itkExceptionMacro(<< "JPEG : Out of disk space");
@@ -526,6 +529,7 @@ JPEGImageIO::WriteSlice(std::string & fileName, const void * buffer)
 
   if (fflush(fp) == EOF)
   {
+    delete[] row_pointers;
     itkExceptionMacro(<< "JPEG : Out of disk space");
   }
 
